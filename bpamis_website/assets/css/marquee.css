@@ -1,0 +1,254 @@
+/* Marquee Animation for Service Icons - Enhanced for Mobile */
+.marquee-container {
+    overflow: hidden;
+    width: 100%;
+    position: relative;
+    padding: 2.5rem 0;
+    white-space: nowrap;
+}
+
+.marquee-section {
+        background: linear-gradient(to right, rgba(255, 255, 255, 0.95), rgba(237, 242, 255, 0.95));
+    padding: 1.5rem;
+    position: relative;
+    overflow: hidden;
+    backdrop-filter: blur(5px);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    box-shadow: 0 10px 30px rgba(37, 99, 235, 0.1);
+}
+
+/* Add floating background elements to match services section */
+.marquee-section::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(to bottom right, rgba(59, 130, 246, 0.05), rgba(99, 102, 241, 0.05));
+    z-index: -1;
+    transform: rotate(1deg);
+    border-radius: inherit;
+}
+
+.marquee-section::after {
+    content: "";
+    position: absolute;
+    top: 15%;
+    right: 10%;
+    width: 20%;
+    height: 20%;
+    background: linear-gradient(to bottom right, rgba(59, 130, 246, 0.1), rgba(99, 102, 241, 0.1));
+    border-radius: 50%;
+    filter: blur(25px);
+    z-index: -1;
+}
+
+.marquee-track {
+    display: inline-flex;
+    align-items: center;
+    gap: 3.5rem; /* Increased from 2.5rem to prevent label overlap */
+    animation: marquee-move 40s linear infinite;
+    /* Ensure all items are in a single line */
+    white-space: nowrap;
+    width: max-content;
+    /* Add padding to ensure items aren't cut off */
+    padding-right: 2.5rem;
+}
+
+.marquee-container:hover .marquee-track {
+    animation-play-state: paused;
+}
+
+/* Apply a more smooth transform for the animation */
+@keyframes marquee-move {
+    0% {
+        transform: translateX(0);
+    }
+    100% {
+        transform: translateX(calc(-50% - 5rem)); /* Increased offset to ensure smooth looping */
+    }
+}
+
+/* Mobile-specific marquee styles */
+@media (max-width: 768px) {
+    .marquee-container {
+        overflow: hidden;
+        width: 100%;
+        position: relative;
+    }
+    
+    .marquee-track {
+        animation: marquee-move 45s linear infinite;
+        gap: 2rem;
+        /* Ensure the track has enough width */
+        width: max-content;
+        display: inline-flex;
+        /* Add extra padding for smoother animation */
+        padding-right: 4rem;
+    }
+    
+    .marquee-icon {
+        width: 4rem !important;
+        height: 4rem !important;
+        font-size: 2rem !important;
+    }
+    
+    .marquee-label {
+        font-size: 0.9rem !important;
+        max-width: 4.5rem;
+        overflow: visible;
+        white-space: normal;
+        text-align: center;
+        line-height: 1.2;
+    }
+    
+    /* Fix for "Generate Report" text breaking */
+    .marquee-track .flex {
+        min-width: 4.5rem;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+    }
+}   
+
+@media (max-width: 640px) {
+    .marquee-track {
+        animation: marquee-move 40s linear infinite;
+        gap: 1.5rem;
+        /* Ensure the track has enough width */
+        width: max-content;
+        padding-right: 3rem;
+    }
+    
+    .marquee-icon {
+        width: 3.5rem !important;
+        height: 3.5rem !important;
+        font-size: 1.8rem !important;
+    }
+    
+    .marquee-label {
+        font-size: 0.85rem !important;
+        max-width: 4rem;
+    }
+    
+    /* Fix for "Generate Report" text breaking */
+    .marquee-track .flex {
+        min-width: 4rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .marquee-section {
+        margin-left: 0.5rem !important;
+        margin-right: 0.5rem !important;
+        overflow: hidden;
+    }
+    
+    .marquee-container {
+        overflow: hidden;
+        padding: 1.5rem 0;
+    }
+    
+    .marquee-track {
+        animation: marquee-move 35s linear infinite;
+        gap: 1rem;
+        /* Ensure the track has enough width */
+        width: max-content;
+        padding-right: 2rem;
+    }
+    
+    .marquee-icon {
+        width: 2.8rem !important;
+        height: 2.8rem !important;
+        font-size: 1.4rem !important;
+    }
+    
+    .marquee-label {
+        margin-top: 0.3rem !important;
+        font-size: 0.75rem !important;
+        max-width: 3.5rem;
+        line-height: 1.1;
+    }
+    
+    /* Fix for "Generate Report" text breaking */
+    .marquee-track .flex {
+        min-width: 3.5rem;
+    }
+}
+    
+    .marquee-label {
+        margin-top: 0.3rem !important;
+        font-size: 0.8rem !important;
+    }
+
+
+.marquee-icon {
+    background: #dbeafe;
+    color: #2563eb;
+    border-radius: 9999px;
+    width: 5rem;
+    height: 5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2.5rem;
+    box-shadow: 0 4px 16px 0 rgba(37, 99, 235, 0.15);
+    transition: box-shadow 0.3s, background 0.3s, color 0.3s, transform 0.3s;
+    position: relative;
+    z-index: 1;
+}
+
+.marquee-icon::after {
+    content: '';
+    position: absolute;
+    top: -2px;
+    left: -2px;
+    right: -2px;
+    bottom: -2px;
+    background: linear-gradient(to bottom right, #3b82f6, #4f46e5);
+    border-radius: inherit;
+    z-index: -1;
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+
+.marquee-icon:hover {
+    background: #2563eb;
+    color: #fff;
+    box-shadow: 0 12px 32px 0 rgba(37, 99, 235, 0.25);
+    transform: scale(1.08);
+}
+
+.marquee-icon:hover::after {
+    opacity: 0.5;
+}
+
+@keyframes pulse {
+    0% {
+        transform: scale(1);
+        box-shadow: 0 4px 16px 0 rgba(37, 99, 235, 0.10);
+    }
+    50% {
+        transform: scale(1.05);
+        box-shadow: 0 8px 24px 0 rgba(37, 99, 235, 0.20);
+    }
+    100% {
+        transform: scale(1);
+        box-shadow: 0 4px 16px 0 rgba(37, 99, 235, 0.10);
+    }
+}
+
+.marquee-label {
+    margin-top: 0.6rem;
+    font-size: 1rem;
+    color: #374151;
+    text-align: center;
+    white-space: nowrap;
+    font-weight: 500;
+    transition: color 0.3s;
+}
+
+.flex:hover .marquee-label {
+    color: #2563eb;
+}

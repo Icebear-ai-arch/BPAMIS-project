@@ -1,0 +1,13 @@
+.premium-pattern {
+    background-image: 
+        linear-gradient(to right, rgba(235, 243, 255, 0.05) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(235, 243, 255, 0.05) 1px, transparent 1px);
+    background-size: 20px 20px;
+}
+
+.premium-left-pattern {
+    background-image: 
+        linear-gradient(135deg, rgba(37, 99, 235, 0.15) 0%, rgba(37, 99, 235, 0.25) 100%),
+        radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.05) 0%, transparent 100%);
+    background-size: 100% 100%, 10px 10px;
+}

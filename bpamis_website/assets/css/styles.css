@@ -1,0 +1,311 @@
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&family=Open+Sans:wght@400;600&display=swap');
+
+body,
+p,
+li,
+span,
+input,
+button,
+a {
+  font-family: 'Open Sans', Arial, sans-serif;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+.font-heading {
+  font-family: 'Montserrat', Arial, sans-serif;
+}
+
+.nav-link {
+  @apply text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium transition duration-300;
+}
+
+.nav-link.active {
+  @apply text-blue-600 font-semibold;
+}
+
+/* Add hover effects */
+.hover-scale {
+  @apply transform transition-transform duration-300 hover:scale-105;
+}
+
+/* Card styles */
+.card {
+  @apply bg-white rounded-xl shadow-lg p-6 hover:shadow-xl transition-shadow duration-300;
+}
+
+html,
+body {
+  overflow-x: hidden;
+}
+
+/* Custom Scrollbar Styles */
+::-webkit-scrollbar {
+  width: 12px;
+  background: #f0f4fa;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #2563eb;
+  border-radius: 8px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #1746a2;
+}
+
+html {
+  scrollbar-color: #2563eb #f0f4fa;
+  scrollbar-width: thin;
+}
+
+/* Fixed Navbar Utility Class */
+.fixed-navbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  z-index: 50;
+}
+
+.demographics-collapsed {
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s;
+}
+
+#demographicsWrapper .demographics-card {
+  max-height: 500px;
+  opacity: 1;
+  transition: max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s;
+}
+
+.slide-up-element {
+  opacity: 0;
+  transform: translateY(40px);
+  transition: opacity 0.7s cubic-bezier(0.4, 0, 0.2, 1), transform 0.7s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.slide-up-element.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.flip-in-element {
+  opacity: 0;
+  transform: rotateX(90deg);
+  transition: opacity 1.2s cubic-bezier(0.60, 0.61, 0.36, 1), transform 1.2s cubic-bezier(0.22, 0.61, 0.36, 1);
+  transform-origin: bottom;
+}
+
+.flip-in-element.visible {
+  opacity: 1;
+  transform: rotateX(0deg);
+}
+
+
+/* Enhanced Scroll Animations */
+.scroll-animate {
+  opacity: 0;
+  transform: translateY(30px);
+  transition: all 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.scroll-animate.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Slide from left */
+.slide-in-left {
+  opacity: 0;
+  transform: translateX(-50px);
+  transition: all 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.slide-in-left.visible {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+/* Slide from right */
+.slide-in-right {
+  opacity: 0;
+  transform: translateX(50px);
+  transition: all 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.slide-in-right.visible {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+
+/* 
+   BPAMIS Premium Animations
+   Provides elegant, slow, and subtle bouncing animations for login and register containers
+*/
+
+/* Bouncing animation for auth containers */
+@keyframes elegantBounce {
+  0% {
+    opacity: 0;
+    transform: translateY(30px) scale(0.95);
+    box-shadow: 0 0px 0px rgba(0, 0, 0, 0);
+  }
+
+  40% {
+    opacity: 1;
+    transform: translateY(-10px) scale(1.02);
+    box-shadow: 0 20px 30px rgba(0, 0, 0, 0.1);
+  }
+
+  60% {
+    transform: translateY(5px) scale(0.98);
+    box-shadow: 0 15px 25px rgba(0, 0, 0, 0.08);
+  }
+
+  80% {
+    transform: translateY(-2px) scale(1.01);
+    box-shadow: 0 18px 28px rgba(0, 0, 0, 0.09);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    box-shadow: 0 15px 25px rgba(0, 0, 0, 0.1);
+  }
+}
+
+/* Fade in animation with slight scale */
+@keyframes fadeInScale {
+  0% {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Container animation classes */
+.premium-container {
+  animation: elegantBounce 1.8s ease-out forwards;
+  position: relative;
+  z-index: 5;
+  width: 100%;
+}
+
+.premium-content {
+  animation: fadeInScale 1.2s ease-out forwards;
+  animation-delay: 0.4s;
+  opacity: 0;
+  height: 100%;
+  background: transparent;
+}
+
+/* Glass-like container styles */
+.premium-glass {
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(12px);
+  box-shadow:
+    0 10px 25px -5px rgba(0, 0, 0, 0.1),
+    0 8px 10px -6px rgba(0, 0, 0, 0.05),
+    0 0 0 1px rgba(255, 255, 255, 0.5) inset;
+  border-radius: 1.5rem;
+  overflow: hidden;
+  transition: all 0.3s ease;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+}
+
+.premium-glass:hover {
+  box-shadow:
+    0 20px 25px -5px rgba(0, 0, 0, 0.1),
+    0 10px 10px -5px rgba(0, 0, 0, 0.04),
+    0 0 0 1px rgba(255, 255, 255, 0.5) inset;
+  transform: translateY(-2px);
+}
+
+/* Content animation timing */
+.premium-staggered>*:nth-child(1) {
+  animation-delay: 0.6s;
+}
+
+.premium-staggered>*:nth-child(2) {
+  animation-delay: 0.8s;
+}
+
+.premium-staggered>*:nth-child(3) {
+  animation-delay: 1.0s;
+}
+
+.premium-staggered>*:nth-child(4) {
+  animation-delay: 1.2s;
+}
+
+.premium-staggered>*:nth-child(5) {
+  animation-delay: 1.4s;
+}
+
+/* Staggered fade-in for form elements */
+.premium-fade-in {
+  opacity: 0;
+  animation: fadeInScale 0.8s ease-out forwards;
+}
+
+/* Professional form field styling */
+.premium-input {
+  transition: all 0.3s ease;
+  border: 1px solid rgba(226, 232, 240, 1);
+}
+
+.premium-input:focus {
+  border-color: #3B82F6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+  outline: none;
+}
+
+/* Premium button styles */
+.premium-button {
+  background: linear-gradient(to right, #2563eb, #4f46e5);
+  transition: all 0.3s ease;
+}
+
+.premium-button:hover {
+  background: linear-gradient(to right, #1d4ed8, #4338ca);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.2);
+}
+
+/* Make animations accessibility-friendly */
+@media (prefers-reduced-motion: reduce) {
+
+  .premium-container,
+  .premium-content,
+  .premium-fade-in {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.premium-pattern {
+  background-image:
+    linear-gradient(to right, rgba(235, 243, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(235, 243, 255, 0.05) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+.premium-left-pattern {
+  background-image:
+    linear-gradient(135deg, rgba(37, 99, 235, 0.15) 0%, rgba(37, 99, 235, 0.25) 100%),
+    radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.05) 0%, transparent 100%);
+  background-size: 100% 100%, 10px 10px;
+}

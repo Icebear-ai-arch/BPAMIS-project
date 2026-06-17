@@ -1,0 +1,1134 @@
+<?php
+// Secretary Case Details - Premium UI aligned with complaint details styling
+require_once __DIR__ . '/../controllers/session_control.php';
+require_once __DIR__ . '/../server/server.php'; // provides $conn
+
+// Shared-host compatibility: some hosts disable mysqlnd, which makes mysqli_stmt::get_result unavailable.
+// This helper fetches rows from a prepared statement as associative arrays with a safe fallback.
+if (!function_exists('bpamis_stmt_fetch_all_assoc')) {
+    function bpamis_stmt_fetch_all_assoc(mysqli_stmt $stmt): array
+    {
+        // Preferred path (requires mysqlnd)
+        if (method_exists($stmt, 'get_result')) {
+            $res = bpamis_stmt_get_result($stmt);
+            // On hosts without mysqlnd, get_result() may exist but return false.
+            // In that case, fall back to bind_result-based fetching below.
+            if ($res instanceof mysqli_result) {
+                $rows = [];
+                while ($row = $res->fetch_assoc()) {
+                    $rows[] = $row;
+                }
+                $res->free();
+                return $rows;
+            }
+        }
+
+        // Fallback path (works without mysqlnd)
+        $stmt->store_result();
+        $meta = $stmt->result_metadata();
+        if (!$meta) {
+            return [];
+        }
+
+        $fields = [];
+        $row = [];
+        $bind = [];
+        while ($field = $meta->fetch_field()) {
+            $name = $field->name;
+            $fields[] = $name;
+            $row[$name] = null;
+            $bind[] = &$row[$name];
+        }
+
+        if (!empty($bind)) {
+            call_user_func_array([$stmt, 'bind_result'], $bind);
+        }
+
+        $rows = [];
+        while ($stmt->fetch()) {
+            $copy = [];
+            foreach ($fields as $name) {
+                $copy[$name] = $row[$name];
+            }
+            $rows[] = $copy;
+        }
+        $meta->free();
+        return $rows;
+    }
+}
+
+if(!isset($_GET['id'])){ echo "<p class='text-center text-red-500'>Case ID not provided.</p>"; exit; }
+$case_id = intval($_GET['id']);
+
+// Hosting-safe helpers: handle Linux table-name casing + optional columns across different DB dumps.
+if (!function_exists('bpamis_find_table_name')) {
+    function bpamis_find_table_name(mysqli $conn, string $desired): ?string
+    {
+        $res = $conn->query('SHOW TABLES');
+        if (!$res) return null;
+        $desiredLower = strtolower($desired);
+        while ($row = $res->fetch_row()) {
+            $tbl = (string)$row[0];
+            if (strtolower($tbl) === $desiredLower) {
+                $res->free();
+                return $tbl;
+            }
+        }
+        $res->free();
+        return null;
+    }
+}
+
+if (!function_exists('bpamis_table_has_column')) {
+    function bpamis_table_has_column(mysqli $conn, string $table, string $column): bool
+    {
+        $tableEsc = str_replace('`', '``', $table);
+        $colEsc = $conn->real_escape_string($column);
+        $q = $conn->query("SHOW COLUMNS FROM `{$tableEsc}` LIKE '{$colEsc}'");
+        if (!$q) return false;
+        $ok = $q->num_rows > 0;
+        $q->close();
+        return $ok;
+    }
+}
+
+$T_CASE_INFO = bpamis_find_table_name($conn, 'CASE_INFO') ?? bpamis_find_table_name($conn, 'case_info') ?? 'CASE_INFO';
+$T_COMPLAINT_INFO = bpamis_find_table_name($conn, 'COMPLAINT_INFO') ?? bpamis_find_table_name($conn, 'complaint_info') ?? 'COMPLAINT_INFO';
+$T_RESIDENT_INFO = bpamis_find_table_name($conn, 'RESIDENT_INFO') ?? bpamis_find_table_name($conn, 'resident_info') ?? 'RESIDENT_INFO';
+$T_COMPLAINT_RESPONDENTS = bpamis_find_table_name($conn, 'COMPLAINT_RESPONDENTS') ?? bpamis_find_table_name($conn, 'complaint_respondents') ?? 'COMPLAINT_RESPONDENTS';
+
+// Resolve additional tables referenced later (Lupon assignment, logs, feedback)
+$T_MEDIATION = bpamis_find_table_name($conn, 'mediation_info') ?? bpamis_find_table_name($conn, 'MEDIATION_INFO') ?? 'mediation_info';
+$T_CONCILIATION = bpamis_find_table_name($conn, 'conciliation') ?? bpamis_find_table_name($conn, 'CONCILIATION') ?? 'conciliation';
+$T_RESOLUTION = bpamis_find_table_name($conn, 'resolution') ?? bpamis_find_table_name($conn, 'RESOLUTION') ?? 'resolution';
+$T_SETTLEMENT = bpamis_find_table_name($conn, 'settlement') ?? bpamis_find_table_name($conn, 'SETTLEMENT') ?? 'settlement';
+$T_ARBITRATION = bpamis_find_table_name($conn, 'arbitration') ?? bpamis_find_table_name($conn, 'ARBITRATION') ?? 'arbitration';
+$T_MEETING_LOGS = bpamis_find_table_name($conn, 'MEETING_LOGS') ?? bpamis_find_table_name($conn, 'meeting_logs') ?? 'MEETING_LOGS';
+$T_SCHEDULE_LIST = bpamis_find_table_name($conn, 'schedule_list') ?? bpamis_find_table_name($conn, 'SCHEDULE_LIST') ?? 'schedule_list';
+$T_FEEDBACK = bpamis_find_table_name($conn, 'feedback') ?? bpamis_find_table_name($conn, 'FEEDBACK') ?? 'feedback';
+
+$caseTableEsc = str_replace('`', '``', $T_CASE_INFO);
+$complaintTableEsc = str_replace('`', '``', $T_COMPLAINT_INFO);
+$residentTableEsc = str_replace('`', '``', $T_RESIDENT_INFO);
+$crTableEsc = str_replace('`', '``', $T_COMPLAINT_RESPONDENTS);
+$mediationTableEsc = str_replace('`', '``', $T_MEDIATION);
+$conciliationTableEsc = str_replace('`', '``', $T_CONCILIATION);
+$resolutionTableEsc = str_replace('`', '``', $T_RESOLUTION);
+$settlementTableEsc = str_replace('`', '``', $T_SETTLEMENT);
+$arbitrationTableEsc = str_replace('`', '``', $T_ARBITRATION);
+$meetingLogsTableEsc = str_replace('`', '``', $T_MEETING_LOGS);
+$scheduleListTableEsc = str_replace('`', '``', $T_SCHEDULE_LIST);
+$feedbackTableEsc = str_replace('`', '``', $T_FEEDBACK);
+
+// Detect if Attachment_Path and case_type columns exist for later rendering (support flexible schema)
+$hasAttachmentCol = false; $hasCaseTypeCol=false;
+if($res=$conn->query("SHOW COLUMNS FROM `{$complaintTableEsc}` LIKE 'Attachment_Path'")) { if($res->num_rows>0) $hasAttachmentCol=true; $res->close(); }
+if($res=$conn->query("SHOW COLUMNS FROM `{$complaintTableEsc}` LIKE 'case_type'")) { if($res->num_rows>0) $hasCaseTypeCol=true; $res->close(); }
+// Detect Certificate_Path on CASE_INFO (may not exist on older schemas)
+$hasCertificateCol = false;
+if ($res = $conn->query("SHOW COLUMNS FROM `{$caseTableEsc}` LIKE 'Certificate_Path'")) { if ($res->num_rows > 0) $hasCertificateCol = true; $res->close(); }
+
+// Detect original case id column in CASE_INFO (flexible to common names)
+$caseOriginalExpr = 'cs.Case_ID AS case_original_id';
+$cols = $conn->query("SHOW COLUMNS FROM `{$caseTableEsc}`");
+if ($cols) {
+    $candidates = [
+        'case_original_id','case_original','original_case_id','original_case',
+        'case_number','case_no','original_casenumber','caseorig','caseid_original'
+    ];
+    while ($col = $cols->fetch_assoc()) {
+        $field = (string)($col['Field'] ?? '');
+        if ($field === '') continue;
+        $lf = strtolower($field);
+        if (in_array($lf, $candidates, true)) {
+            $safe = str_replace('`', '``', $field);
+            $caseOriginalExpr = "cs.`{$safe}` AS case_original_id";
+            break;
+        }
+    }
+    $cols->free();
+}
+
+// Complaint details column can differ between dumps
+$complaintDetailsExpr = 'ci.Complaint_Details';
+if (!bpamis_table_has_column($conn, $T_COMPLAINT_INFO, 'Complaint_Details')) {
+    if (bpamis_table_has_column($conn, $T_COMPLAINT_INFO, 'Complaint_Description')) {
+        $complaintDetailsExpr = 'ci.Complaint_Description';
+    } else {
+        $complaintDetailsExpr = 'ci.Complaint_Title';
+    }
+}
+
+// Respondent id column can differ in casing
+$hasRespondentId = bpamis_table_has_column($conn, $T_COMPLAINT_INFO, 'Respondent_ID') || bpamis_table_has_column($conn, $T_COMPLAINT_INFO, 'respondent_id');
+$respondentIdCol = bpamis_table_has_column($conn, $T_COMPLAINT_INFO, 'Respondent_ID') ? 'Respondent_ID' : 'respondent_id';
+
+// Fetch case + complaint + complainant (+ attachment path / case_type if present)
+$selectExtras = '';
+if($hasAttachmentCol) $selectExtras .= ', ci.Attachment_Path';
+if($hasCaseTypeCol) $selectExtras .= ', ci.case_type';
+$sql = "SELECT cs.Case_ID, {$caseOriginalExpr}, cs.Case_Status, cs.Date_Opened, ci.Complaint_ID, ci.Complaint_Title, {$complaintDetailsExpr} AS Complaint_Details, ci.Date_Filed".$selectExtras.",
+                                comp.First_Name AS Complainant_First, comp.Last_Name AS Complainant_Last
+                 FROM `{$caseTableEsc}` cs
+                 LEFT JOIN `{$complaintTableEsc}` ci ON cs.Complaint_ID = ci.Complaint_ID
+                 LEFT JOIN `{$residentTableEsc}` comp ON ci.Resident_ID = comp.Resident_ID
+                 WHERE cs.Case_ID = ?";
+$stmt = $conn->prepare($sql);
+if(!$stmt){
+    error_log('view_case_details.php: prepare failed: ' . ($conn->error ?? 'unknown error'));
+    echo "<p class='text-center text-red-500'>Unable to load case details right now.</p>";
+    exit;
+}
+$stmt->bind_param('i',$case_id);
+$stmt->execute();
+$caseRows = bpamis_stmt_fetch_all_assoc($stmt);
+if(count($caseRows)===0){ echo "<p class='text-center text-red-500'>Case not found.</p>"; exit; }
+$case = $caseRows[0];
+$stmt->close();
+$complaint_id = $case['Complaint_ID'];
+// Display-only complaint reference
+$complaint_ref = 'COMP#' . str_pad((int)$complaint_id, 2, '0', STR_PAD_LEFT);
+
+// If certificate column exists, fetch it (separate query to avoid breaking when column absent)
+if ($hasCertificateCol) {
+    $cst = $conn->prepare("SELECT Certificate_Path FROM `{$caseTableEsc}` WHERE Case_ID = ? LIMIT 1");
+    if ($cst) {
+        $cst->bind_param('i', $case_id);
+        $cst->execute();
+        $crows = bpamis_stmt_fetch_all_assoc($cst);
+        if (!empty($crows)) {
+            $case['Certificate_Path'] = $crows[0]['Certificate_Path'] ?? null;
+        }
+        $cst->close();
+    }
+}
+
+// Derive case type label & style
+$caseTypeRaw = $hasCaseTypeCol ? trim((string)$case['case_type']) : '';
+$caseType = $caseTypeRaw !== '' ? strtoupper($caseTypeRaw) : 'UNSPECIFIED';
+$typeStyles = [
+    'CRIMINAL' => 'bg-red-50 text-red-600 border border-red-200',
+    'CIVIL'    => 'bg-gray-100 text-gray-700 border border-gray-300'
+];
+$typeClass = $typeStyles[$caseType] ?? 'bg-primary-50 text-primary-600 border border-primary-200';
+
+// Parse attachments into array (if column present)
+$attachments = [];
+if($hasAttachmentCol && !empty($case['Attachment_Path'])) {
+    $rawParts = explode(';', $case['Attachment_Path']);
+    foreach($rawParts as $p){
+        $p = trim($p);
+        if($p==='') continue;
+        $p = ltrim($p,'/');
+        $segments = array_map(function($seg){ return rawurlencode($seg); }, explode('/', $p));
+        $encoded = implode('/', $segments);
+        $attachments[] = [
+            'raw' => $p,
+            'encoded' => $encoded,
+            'ext' => strtolower(pathinfo($p, PATHINFO_EXTENSION))
+        ];
+    }
+}
+
+// Respondents aggregation
+$respondent_names=[];
+
+// Get main respondent id (prefer prepared, fallback to direct query)
+$main_respondent_id = null;
+if ($hasRespondentId) {
+    $stmt_main_id = $conn->prepare("SELECT `{$respondentIdCol}` FROM `{$complaintTableEsc}` WHERE Complaint_ID=?");
+    if ($stmt_main_id) {
+        $stmt_main_id->bind_param('i', $complaint_id);
+        $stmt_main_id->execute();
+        $stmt_main_id->bind_result($main_respondent_id);
+        $stmt_main_id->fetch();
+        $stmt_main_id->close();
+    } else {
+        // fallback - safe because $complaint_id is int
+        $q = $conn->query("SELECT `{$respondentIdCol}` AS rid FROM `{$complaintTableEsc}` WHERE Complaint_ID = " . (int)$complaint_id);
+        if ($q && $r = $q->fetch_assoc()) { $main_respondent_id = $r['rid'] ?? null; }
+    }
+}
+
+// If we have a main respondent, resolve their name
+if ($main_respondent_id) {
+    $stmt_main_name = $conn->prepare("SELECT First_Name,Last_Name FROM `{$residentTableEsc}` WHERE Resident_ID=?");
+    if ($stmt_main_name) {
+        $stmt_main_name->bind_param('i', $main_respondent_id);
+        $stmt_main_name->execute();
+        $stmt_main_name->bind_result($f, $l);
+        while ($stmt_main_name->fetch()) { $respondent_names[] = $f . ' ' . $l; }
+        $stmt_main_name->close();
+    } else {
+        $q = $conn->query("SELECT First_Name,Last_Name FROM `{$residentTableEsc}` WHERE Resident_ID = " . (int)$main_respondent_id);
+        if ($q) {
+            while ($r = $q->fetch_assoc()) { $respondent_names[] = $r['First_Name'] . ' ' . $r['Last_Name']; }
+        }
+    }
+}
+
+// Additional respondents
+$stmt_others = $conn->prepare("SELECT ri.First_Name,ri.Last_Name FROM `{$crTableEsc}` cr JOIN `{$residentTableEsc}` ri ON cr.Respondent_ID=ri.Resident_ID WHERE cr.Complaint_ID=?");
+if ($stmt_others) {
+    $stmt_others->bind_param('i', $complaint_id);
+    $stmt_others->execute();
+    $otherRows = bpamis_stmt_fetch_all_assoc($stmt_others);
+    foreach ($otherRows as $row) {
+        $respondent_names[] = ($row['First_Name'] ?? '') . ' ' . ($row['Last_Name'] ?? '');
+    }
+    $stmt_others->close();
+} else {
+    $q = $conn->query("SELECT ri.First_Name,ri.Last_Name FROM `{$crTableEsc}` cr JOIN `{$residentTableEsc}` ri ON cr.Respondent_ID=ri.Resident_ID WHERE cr.Complaint_ID = " . (int)$complaint_id);
+    if ($q) { while ($row = $q->fetch_assoc()) { $respondent_names[] = $row['First_Name'] . ' ' . $row['Last_Name']; } }
+}
+
+$respondents_display = $respondent_names ? implode(', ', $respondent_names) : 'N/A';
+
+// Status badge mapping
+$status = strtoupper(trim($case['Case_Status']));
+$caseStatusStyles=[
+    'OPEN'     => 'bg-sky-50 text-sky-600 border border-sky-200',
+    'PENDING'  => 'bg-amber-50 text-amber-600 border border-amber-200',
+    'CLOSED'   => 'bg-gray-100 text-gray-700 border border-gray-300',
+    'RESOLVED' => 'bg-emerald-50 text-emerald-600 border border-emerald-200'
+];
+$statusClass = $caseStatusStyles[$status] ?? 'bg-primary-50 text-primary-600 border border-primary-200';
+
+// Fetch assigned Lupon Tagapamayapa (mediator/arbitrator)
+$lupon_name = 'Not Yet Assigned';
+$lupon_sql = "
+    SELECT 
+        CASE 
+            WHEN cs.Case_Status = 'Mediation' THEN mi.Mediator_Name
+            WHEN cs.Case_Status = 'Conciliation' THEN ci.Mediator_Name
+            WHEN cs.Case_Status = 'Resolution' THEN ri.Mediator_Name
+            WHEN cs.Case_Status = 'Settlement' THEN si.Mediator_Name
+            WHEN cs.Case_Status = 'Arbitration' THEN ai.Mediator_Name
+            ELSE NULL
+        END AS lupon_tagapamayapa
+    FROM `{$caseTableEsc}` cs
+    LEFT JOIN `{$mediationTableEsc}` mi ON cs.Case_ID = mi.Case_ID
+    LEFT JOIN `{$conciliationTableEsc}` ci ON cs.Case_ID = ci.Case_ID
+    LEFT JOIN `{$resolutionTableEsc}` ri ON cs.Case_ID = ri.Case_ID
+    LEFT JOIN `{$settlementTableEsc}` si ON cs.Case_ID = si.Case_ID
+    LEFT JOIN `{$arbitrationTableEsc}` ai ON cs.Case_ID = ai.Case_ID
+    WHERE cs.Case_ID = ?
+";
+$lupon_stmt = $conn->prepare($lupon_sql);
+if ($lupon_stmt) {
+    $lupon_stmt->bind_param('i', $case_id);
+    $lupon_stmt->execute();
+    $luponRows = bpamis_stmt_fetch_all_assoc($lupon_stmt);
+    if (!empty($luponRows)) {
+        $lupon_name = $luponRows[0]['lupon_tagapamayapa'] ?? 'Not Yet Assigned';
+    }
+    $lupon_stmt->close();
+}
+
+// Fetch ALL meeting logs for this case (no pagination, for dynamic display)
+$stmt_logs = $conn->prepare("SELECT ml.*, sl.hearingTitle FROM `{$meetingLogsTableEsc}` ml LEFT JOIN `{$scheduleListTableEsc}` sl ON sl.Case_ID = ml.Case_ID AND DATE(sl.HearingDateTime) = ml.Hearing_Date AND TIME(sl.HearingDateTime) = ml.Hearing_Time WHERE ml.Case_ID = ? ORDER BY ml.Hearing_Date DESC, ml.Hearing_Time DESC, ml.Log_ID DESC");
+$meetingLogs = [];
+if ($stmt_logs) {
+    $stmt_logs->bind_param('i', $case_id);
+    $stmt_logs->execute();
+    $meetingLogs = bpamis_stmt_fetch_all_assoc($stmt_logs);
+    $stmt_logs->close();
+} else {
+    $logsResult = $conn->query("SELECT ml.*, sl.hearingTitle FROM `{$meetingLogsTableEsc}` ml LEFT JOIN `{$scheduleListTableEsc}` sl ON sl.Case_ID = ml.Case_ID AND DATE(sl.HearingDateTime) = ml.Hearing_Date AND TIME(sl.HearingDateTime) = ml.Hearing_Time WHERE ml.Case_ID = " . (int)$case_id . " ORDER BY ml.Hearing_Date DESC, ml.Hearing_Time DESC, ml.Log_ID DESC");
+    while ($row = $logsResult->fetch_assoc()) {
+        $meetingLogs[] = $row;
+    }
+}
+
+// Fetch feedback for this case
+$feedback_stmt = $conn->prepare("SELECT * FROM `{$feedbackTableEsc}` WHERE case_id = ? ORDER BY created_at DESC");
+$feedbackList = [];
+if ($feedback_stmt) {
+    $feedback_stmt->bind_param('i', $case_id);
+    $feedback_stmt->execute();
+    $feedbackList = bpamis_stmt_fetch_all_assoc($feedback_stmt);
+    $feedback_stmt->close();
+}
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes" />
+    <title>Case • Details</title>
+    <link rel="icon" type="image/png" href="/BPAMIS/SecMenu/logo.png" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>tailwind.config={theme:{extend:{colors:{primary:{50:'#f0f7ff',100:'#e0effe',200:'#bae2fd',300:'#7cccfd',400:'#36b3f9',500:'#0c9ced',600:'#0281d4',700:'#026aad',800:'#065a8f',900:'#0a4b76'}},boxShadow:{glow:'0 0 0 1px rgba(12,156,237,.08),0 4px 20px -2px rgba(6,90,143,.18)'},animation:{'fade-in':'fadeIn .4s ease-out'},keyframes:{fadeIn:{'0%':{opacity:0},'100%':{opacity:1}}}}}};</script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        
+        .glass{background:linear-gradient(140deg,rgba(255,255,255,.92),rgba(255,255,255,.68));backdrop-filter:blur(14px) saturate(140%);-webkit-backdrop-filter:blur(14px) saturate(140%);} 
+        .field-label{font-size:11px;letter-spacing:.05em;font-weight:600;text-transform:uppercase;color:#64748b;} 
+        
+        /* Quick action button active state */
+        .action-btn {
+            transition: all 0.2s ease;
+        }
+        .action-btn.active {
+            background: linear-gradient(135deg, #0281d4 0%, #0c9ced 100%);
+            color: white;
+            box-shadow: 0 4px 12px rgba(2, 129, 212, 0.3);
+        }
+        .action-btn.active i {
+            color: white;
+        }
+        
+        /* Dynamic content area */
+        #dynamicContent {
+            display: none;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+        #dynamicContent.show {
+            display: block;
+            opacity: 1;
+        } 
+        
+        /* Tablet responsive styles (641px - 1024px) */
+        @media (min-width: 641px) and (max-width: 1024px) {
+            main {
+                padding-left: 1.5rem;
+                padding-right: 1.5rem;
+            }
+            
+            section.glass {
+                padding: 1.5rem !important;
+            }
+            
+            header h1 {
+                font-size: 1.5rem !important;
+            }
+            
+            .grid.md\:grid-cols-2 {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            
+            .grid.md\:grid-cols-3 {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+        
+        /* Mobile responsive styles - aligned with view_cases.php format */
+        @media (max-width: 640px) {
+            body {
+                font-size: 14px;
+            }
+            /* Container adjustments */
+            main {
+                padding-left: 0.5rem !important;
+                padding-right: 0.5rem !important;
+                padding-top: 1rem !important;
+                padding-bottom: 1.5rem !important;
+            }
+            
+            /* Back button styling */
+            .mb-8 {
+                margin-bottom: 0.75rem !important;
+            }
+            
+            .mb-8 a {
+                font-size: 0.7rem !important;
+            }
+            
+            .mb-8 a .h-8 {
+                height: 1.5rem !important;
+                width: 1.5rem !important;
+            }
+            
+            .mb-8 a .ml-2 {
+                margin-left: 0.375rem !important;
+            }
+            
+            /* Main section card */
+            section.glass {
+                padding: 0.75rem !important;
+                border-radius: 0.75rem !important;
+            }
+            
+            /* Header area */
+            header {
+                margin-bottom: 1rem !important;
+            }
+            
+            /* Icon container beside case number (updated to w-8) */
+            header h1 .w-8 {
+                width: 1.75rem !important; /* 28px */
+                height: 1.75rem !important;
+                border-radius: 0.5rem !important;
+            }
+
+            header h1 .w-8 i {
+                font-size: 0.8rem !important;
+            }
+            
+            /* Title styling */
+            header h1 {
+                font-size: 1rem !important;
+                line-height: 1.3 !important;
+                gap: 0.375rem !important;
+            }
+            
+            /* Status and type badges */
+            header h1 span.inline-flex {
+                font-size: 0.6rem !important;
+                padding: 0.2rem 0.4rem !important;
+                gap: 0.2rem !important;
+            }
+            
+            header h1 span.inline-flex i {
+                font-size: 0.45rem !important;
+            }
+            
+            /* Meta information */
+            header .mt-3 {
+                margin-top: 0.375rem !important;
+                font-size: 0.65rem !important;
+                gap: 0.375rem !important;
+            }
+            
+            header .mt-3 span {
+                white-space: nowrap;
+            }
+            
+            /* Section headings */
+            h2 {
+                font-size: 0.6rem !important;
+                margin-bottom: 0.4rem !important;
+                letter-spacing: 0.03em !important;
+            }
+            
+            /* Field labels */
+            .field-label {
+                font-size: 0.55rem !important;
+                margin-bottom: 0.2rem !important;
+            }
+            
+            /* Field values */
+            .group p:not(.field-label) {
+                font-size: 0.75rem !important;
+                line-height: 1.3 !important;
+            }
+            
+            /* Grid adjustments - force single column */
+            .grid.gap-5,
+            .grid.md\:grid-cols-2 {
+                grid-template-columns: 1fr !important;
+                gap: 0.4rem !important;
+            }
+            
+            .grid.gap-4 {
+                gap: 0.4rem !important;
+            }
+            
+            /* Card padding */
+            .group.rounded-xl {
+                padding: 0.5rem !important;
+                border-radius: 0.5rem !important;
+            }
+            
+            /* Complaint details card */
+            .mb-5 {
+                margin-bottom: 0.5rem !important;
+            }
+            
+            /* Content sections spacing */
+            .space-y-10 > * + * {
+                margin-top: 1rem !important;
+            }
+            
+            /* Attachment grid - 2 columns on mobile */
+            .grid.sm\:grid-cols-2,
+            .grid.md\:grid-cols-3,
+            .grid.lg\:grid-cols-4 {
+                grid-template-columns: repeat(2, 1fr) !important;
+                gap: 0.4rem !important;
+            }
+            
+            /* Attachment card icons */
+            .aspect-video i {
+                font-size: 1.5rem !important;
+            }
+            
+            .aspect-video .text-\[11px\] {
+                font-size: 0.55rem !important;
+            }
+            
+            /* Attachment buttons */
+            .group-hover\:opacity-100 button,
+            .group-hover\:opacity-100 a {
+                font-size: 0.6rem !important;
+                padding: 0.3rem 0.4rem !important;
+                gap: 0.2rem !important;
+            }
+            
+            /* Certificate section */
+            .mt-3 {
+                margin-top: 0.5rem !important;
+            }
+            
+            .mt-3 p {
+                font-size: 0.7rem !important;
+            }
+            
+            /* Certificate section buttons */
+            .mt-3 a.inline-flex {
+                font-size: 0.65rem !important;
+                padding: 0.4rem 0.6rem !important;
+                margin-left: 0 !important;
+                margin-top: 0.375rem !important;
+                display: block !important;
+                text-align: center !important;
+                width: 100% !important;
+            }
+            
+            /* Action buttons at bottom */
+            .pt-4.border-t {
+                padding-top: 0.5rem !important;
+                flex-direction: column !important;
+                gap: 0.4rem !important;
+            }
+            
+            .pt-4.border-t a,
+            .pt-4.border-t button {
+                width: 100% !important;
+                justify-content: center !important;
+                font-size: 0.75rem !important;
+                padding: 0.5rem 0.75rem !important;
+            }
+            
+            /* Image preview modal */
+            #imgPreviewModal {
+                padding: 0.5rem !important;
+            }
+            
+            #imgPreviewModal .max-w-4xl {
+                padding: 0 !important;
+            }
+            
+            #imgPreviewModal button {
+                top: 0.25rem !important;
+                right: 0.25rem !important;
+                width: 1.75rem !important;
+                height: 1.75rem !important;
+                font-size: 0.875rem !important;
+            }
+            
+            #imgPreviewModal .rounded-2xl {
+                border-radius: 0.75rem !important;
+            }
+            
+            /* Background decorative blobs - reduce size on mobile */
+            .pointer-events-none .absolute {
+                transform: scale(0.5);
+            }
+        }
+        
+        /* Extra small devices (320px - 380px) */
+        @media (max-width: 380px) {
+            body {
+                font-size: 13px;
+            }
+            
+            main {
+                padding-left: 0.375rem !important;
+                padding-right: 0.375rem !important;
+            }
+            
+            section.glass {
+                padding: 0.5rem !important;
+            }
+            
+            header h1 {
+                font-size: 0.9rem !important;
+            }
+            
+            header h1 span.inline-flex {
+                font-size: 0.55rem !important;
+                padding: 0.15rem 0.35rem !important;
+            }
+            
+            header .mt-3 {
+                font-size: 0.6rem !important;
+            }
+            
+            .group p:not(.field-label) {
+                font-size: 0.7rem !important;
+            }
+            
+            h2 {
+                font-size: 0.55rem !important;
+            }
+            
+            .field-label {
+                font-size: 0.5rem !important;
+            }
+            
+            .pt-4.border-t a,
+            .pt-4.border-t button {
+                font-size: 0.7rem !important;
+                padding: 0.45rem 0.6rem !important;
+            }
+        }
+    </style>
+</head>
+<body class="font-sans antialiased bg-gradient-to-br from-primary-50 via-white to-primary-100 min-h-screen text-gray-800 relative overflow-x-hidden">
+    <div class="pointer-events-none absolute inset-0 overflow-hidden">
+        <div class="absolute -top-32 -left-24 w-96 h-96 bg-primary-200 opacity-30 rounded-full blur-3xl"></div>
+        <div class="absolute top-1/2 -right-24 w-[30rem] h-[30rem] bg-primary-300 opacity-20 rounded-full blur-3xl"></div>
+    </div>
+    <?php include '../includes/barangay_official_sec_nav.php'; ?>
+    <?php include 'sidebar_.php'; ?>
+    <main class="relative z-10 max-w-5xl mx-auto px-4 md:px-8 pt-10 pb-24 animate-fade-in">
+        <div class="mb-8 flex items-center gap-3">
+            <a href="view_cases.php" class="group inline-flex items-center text-sm font-medium text-primary-700 hover:text-primary-900 transition">
+                <span class="inline-flex h-8 w-8 items-center justify-center rounded-md bg-white/70 shadow ring-1 ring-primary-100 group-hover:bg-primary-50"><i class="fa fa-arrow-left"></i></span>
+                <span class="ml-2">Back to Previous Page</span>
+            </a>
+        </div>
+        <section class="relative glass shadow-glow rounded-2xl p-6 md:p-10 border border-white/60 ring-1 ring-primary-100/40 overflow-hidden">
+            <div class="absolute inset-0 pointer-events-none"><div class="absolute -top-10 -right-10 w-40 h-40 rounded-full bg-gradient-to-br from-primary-200/60 to-primary-400/40 blur-2xl opacity-40"></div></div>
+            
+            <!-- Header -->
+            <header class="relative mb-8">
+                <div class="flex-1 min-w-0">
+                    <h1 class="text-2xl md:text-3xl font-semibold tracking-tight text-gray-800 flex flex-wrap items-center gap-3">
+                        <span class="inline-flex items-center gap-2">
+                            <span class="inline-flex items-center justify-center w-8 h-8 mr-3 rounded-lg bg-primary-50 ring-2 ring-primary-100 shadow-sm">
+                                <i class="fa fa-gavel text-base text-primary-600"></i>
+                            </span>
+                            <span class="bg-clip-text text-transparent bg-gradient-to-r from-primary-700 to-primary-500">
+                                <?php if(!empty($case['case_original_id'])): ?>
+                                    Case ID: <?= htmlspecialchars($case['case_original_id']) ?>
+                                <?php else: ?>
+                                    Case #<?= htmlspecialchars($case['Case_ID']) ?>
+                                <?php endif; ?>
+                            </span>
+                        </span>
+                        <span class="inline-flex items-center gap-1 text-xs font-medium px-3 py-1 rounded-full <?= $statusClass ?> shadow-sm"><i class="fa fa-circle text-[8px]"></i> <?= htmlspecialchars($case['Case_Status']) ?></span>
+                        <span class="inline-flex items-center gap-1 text-xs font-medium px-3 py-1 rounded-full <?= $typeClass ?> shadow-sm"><i class="fa fa-tag text-[10px]"></i> <?= htmlspecialchars($caseType) ?></span>
+                    </h1>
+                    <div class="mt-3 flex flex-wrap items-center gap-4 text-sm text-gray-500">
+                        <span class="inline-flex items-center gap-1"><i class="fa fa-calendar"></i> Opened <?= date('F d, Y', strtotime($case['Date_Opened'])) ?></span>
+                        <span class="inline-flex items-center gap-1"><i class="fa fa-folder-open"></i> Complaint <?= htmlspecialchars($complaint_ref) ?></span>
+                        <?php if(!empty($case['case_original_id'])): ?>
+                            <span class="inline-flex items-center gap-1"><i class="fa fa-hashtag"></i> ID: <?= htmlspecialchars($case['Case_ID']) ?></span>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            </header>
+
+        </section>
+
+        <!-- 2-Column Layout: Case Details (Left) + Quick Actions (Right) -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
+            
+            <!-- LEFT COLUMN: Case Details Container -->
+            <div class="lg:col-span-2">
+                <section class="relative glass shadow-glow rounded-2xl p-6 md:p-8 border border-white/60 ring-1 ring-primary-100/40 overflow-hidden">
+                    <div class="absolute inset-0 pointer-events-none"><div class="absolute -top-10 -right-10 w-40 h-40 rounded-full bg-gradient-to-br from-primary-200/60 to-primary-400/40 blur-2xl opacity-40"></div></div>
+                    
+                    <div class="relative space-y-6">
+                        <!-- Case Original ID Card -->
+                        <div class="group rounded-xl border bg-white/70 border-gray-200 hover:border-primary-200 transition p-4 shadow-sm">
+                            <p class="field-label mb-1">Case Original ID</p>
+                            <p class="font-semibold text-gray-800 text-lg">
+                                <?php if(!empty($case['case_original_id'])): ?>
+                                    <?= htmlspecialchars($case['case_original_id']) ?>
+                                <?php else: ?>
+                                    <span class="text-gray-400">C<?= htmlspecialchars($case['Case_ID']) ?></span>
+                                <?php endif; ?>
+                            </p>
+                        </div>
+
+                        <!-- Parties Section -->
+                        <div>
+                            <h2 class="text-sm font-semibold tracking-wider text-gray-500 uppercase mb-3">Parties Involved</h2>
+                            <div class="grid gap-4 md:grid-cols-2">
+                                <div class="group rounded-xl border bg-white/70 border-gray-200 hover:border-primary-200 transition p-4 shadow-sm">
+                                    <p class="field-label mb-1">Complainant</p>
+                                    <p class="font-semibold text-gray-800"><?= htmlspecialchars(trim($case['Complainant_First'].' '.$case['Complainant_Last'])) ?></p>
+                                </div>
+                                <div class="group rounded-xl border bg-white/70 border-gray-200 hover:border-primary-200 transition p-4 shadow-sm">
+                                    <p class="field-label mb-1">Respondents</p>
+                                    <p class="text-gray-700 leading-relaxed"><?= htmlspecialchars($respondents_display) ?></p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Description Card -->
+                        <div>
+                            <h2 class="text-sm font-semibold tracking-wider text-gray-500 uppercase mb-3">Complaint Description</h2>
+                            <div class="group rounded-xl border bg-white/70 border-gray-200 hover:border-primary-200 transition p-4 shadow-sm">
+                                <p class="text-gray-700 leading-relaxed whitespace-pre-line"><?= nl2br(htmlspecialchars($case['Complaint_Details'])) ?></p>
+                            </div>
+                        </div>
+
+                        <!-- Date Filed & Lupon Assigned -->
+                        <div class="grid gap-4 md:grid-cols-2">
+                            <div class="group rounded-xl border bg-white/70 border-gray-200 hover:border-primary-200 transition p-4 shadow-sm">
+                                <p class="field-label mb-1">Date Filed</p>
+                                <p class="font-semibold text-gray-800"><?= date('F d, Y', strtotime($case['Date_Filed'])) ?></p>
+                            </div>
+                            <div class="group rounded-xl border bg-white/70 border-gray-200 hover:border-primary-200 transition p-4 shadow-sm">
+                                <p class="field-label mb-1">Lupon Tagapamayapa Assigned</p>
+                                <p class="font-semibold text-gray-800"><?= htmlspecialchars($lupon_name) ?></p>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <!-- RIGHT COLUMN: Quick Actions Container -->
+            <div class="lg:col-span-1">
+                <section class="relative glass shadow-glow rounded-2xl p-6 border border-white/60 ring-1 ring-primary-100/40 overflow-hidden">
+                    <div class="absolute inset-0 pointer-events-none"><div class="absolute -top-10 -right-10 w-40 h-40 rounded-full bg-gradient-to-br from-primary-200/60 to-primary-400/40 blur-2xl opacity-40"></div></div>
+                    
+                    <div class="relative">
+                        <div class="sticky top-24">
+                            <h2 class="text-sm font-semibold tracking-wider text-gray-500 uppercase mb-4">Quick Actions</h2>
+                            <div class="space-y-3">
+                                
+                                <!-- View Feedback Button -->
+                                <button onclick="showSection('feedback')" class="action-btn w-full text-left flex items-center gap-3 px-4 py-3 rounded-xl border bg-white/70 border-gray-200 hover:border-primary-300 hover:shadow-md transition group">
+                                    <span class="flex-shrink-0 w-10 h-10 rounded-lg bg-primary-50 flex items-center justify-center group-hover:bg-primary-100 transition">
+                                        <i class="fa fa-comments text-primary-600"></i>
+                                    </span>
+                                    <div class="flex-1 min-w-0">
+                                        <p class="font-semibold text-gray-800 text-sm">View Feedback</p>
+                                        <p class="text-xs text-gray-500">Case feedback & comments</p>
+                                    </div>
+                                    <i class="fa fa-chevron-right text-gray-400 text-xs"></i>
+                                </button>
+
+                                <!-- View Meeting Logs Button -->
+                                <button onclick="showSection('meetings')" class="action-btn w-full text-left flex items-center gap-3 px-4 py-3 rounded-xl border bg-white/70 border-gray-200 hover:border-primary-300 hover:shadow-md transition group">
+                                    <span class="flex-shrink-0 w-10 h-10 rounded-lg bg-primary-50 flex items-center justify-center group-hover:bg-primary-100 transition">
+                                        <i class="fa fa-clipboard-list text-primary-600"></i>
+                                    </span>
+                                    <div class="flex-1 min-w-0">
+                                        <p class="font-semibold text-gray-800 text-sm">Meeting Logs</p>
+                                        <p class="text-xs text-gray-500">Hearing history & notes</p>
+                                    </div>
+                                    <span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-primary-100 text-primary-700 text-xs font-semibold"><?= count($meetingLogs) ?></span>
+                                    <i class="fa fa-chevron-right text-gray-400 text-xs"></i>
+                                </button>
+
+                                <!-- View Attachments Button -->
+                                <button onclick="showSection('attachments')" class="action-btn w-full text-left flex items-center gap-3 px-4 py-3 rounded-xl border bg-white/70 border-gray-200 hover:border-primary-300 hover:shadow-md transition group">
+                                    <span class="flex-shrink-0 w-10 h-10 rounded-lg bg-primary-50 flex items-center justify-center group-hover:bg-primary-100 transition">
+                                        <i class="fa fa-paperclip text-primary-600"></i>
+                                    </span>
+                                    <div class="flex-1 min-w-0">
+                                        <p class="font-semibold text-gray-800 text-sm">Attachments</p>
+                                        <p class="text-xs text-gray-500">Files & documents</p>
+                                    </div>
+                                    <span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-primary-100 text-primary-700 text-xs font-semibold"><?= count($attachments) ?></span>
+                                    <i class="fa fa-chevron-right text-gray-400 text-xs"></i>
+                                </button>
+
+                            </div>
+
+                            <!-- Certificate Notice (if exists) -->
+                            <?php if (!empty($case['Certificate_Path'])): ?>
+                            <div class="mt-6 p-4 rounded-xl bg-emerald-50 border border-emerald-200">
+                                <div class="flex items-start gap-3">
+                                    <i class="fa fa-certificate text-emerald-600 text-lg mt-0.5"></i>
+                                    <div class="flex-1">
+                                        <p class="text-sm font-semibold text-emerald-900 mb-1">Certificate Available</p>
+                                        <p class="text-xs text-emerald-700 mb-2">Certificate to File Action has been attached</p>
+                                        <?php $cert = ltrim($case['Certificate_Path'], '/'); $enc = implode('/', array_map('rawurlencode', explode('/', $cert))); ?>
+                                        <div class="flex flex-wrap gap-2">
+                                            <a href="../<?= htmlspecialchars($enc) ?>" target="_blank" class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium shadow-sm"><i class="fa fa-eye"></i> View</a>
+                                            <a href="../<?= htmlspecialchars($enc) ?>" download class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white hover:bg-gray-50 text-emerald-700 border border-emerald-300 text-xs font-medium shadow-sm"><i class="fa fa-download"></i> Download</a>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <?php endif; ?>
+
+                            <!-- Update Status Button -->
+                            <div class="mt-6">
+                                <a href="update_case_status.php?id=<?= urlencode($case['Case_ID']) ?>" class="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-primary-600 hover:bg-primary-700 text-white shadow-md text-sm font-semibold transition">
+                                    <i class="fa fa-pen"></i> Update Case Status
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+        </div>
+
+        <!-- DYNAMIC CONTENT AREA (appears below when action clicked) -->
+        <div id="dynamicContent" class="relative mt-6">
+            <section class="glass shadow-glow rounded-2xl p-6 md:p-8 border border-white/60 ring-1 ring-primary-100/40">
+                <div id="contentArea"></div>
+            </section>
+        </div>
+    </main>
+    <?php $conn->close(); ?>
+    <script>
+    function previewImage(src){
+        var modal=document.getElementById('imgPreviewModal');
+        var img=document.getElementById('imgPreviewTag');
+        if(!modal||!img) return;
+        img.src=src;
+        modal.classList.remove('hidden');
+        document.body.classList.add('overflow-hidden');
+    }
+    function closePreview(){
+        var modal=document.getElementById('imgPreviewModal');
+        if(!modal) return;
+        modal.classList.add('hidden');
+        document.body.classList.remove('overflow-hidden');
+    }
+
+    // Quick Actions Dynamic Content
+    let currentSection = null;
+
+    function showSection(section) {
+        const dynamicContent = document.getElementById('dynamicContent');
+        const contentArea = document.getElementById('contentArea');
+        const buttons = document.querySelectorAll('.action-btn');
+
+        // If clicking same section, close it
+        if (currentSection === section) {
+            dynamicContent.classList.remove('show');
+            buttons.forEach(btn => btn.classList.remove('active'));
+            currentSection = null;
+            setTimeout(() => contentArea.innerHTML = '', 300);
+            return;
+        }
+
+        // Remove active class from all buttons
+        buttons.forEach(btn => btn.classList.remove('active'));
+
+        // Set current section
+        currentSection = section;
+
+        // Generate content based on section
+        let content = '';
+        if (section === 'feedback') {
+            content = generateFeedbackContent();
+        } else if (section === 'meetings') {
+            content = generateMeetingLogsContent();
+        } else if (section === 'attachments') {
+            content = generateAttachmentsContent();
+        }
+
+        // Update content and show
+        contentArea.innerHTML = content;
+        dynamicContent.classList.add('show');
+
+        // Add active class to clicked button
+        event.target.closest('.action-btn').classList.add('active');
+
+        // Smooth scroll to content
+        setTimeout(() => {
+            dynamicContent.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }, 100);
+    }
+
+    function generateFeedbackContent() {
+        const feedbackList = <?= json_encode($feedbackList) ?>;
+        
+        if (feedbackList.length === 0) {
+            return `
+                <div class="mt-8 p-6 text-center">
+                    <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-100 mb-4">
+                        <i class="fa fa-comments text-2xl text-gray-400"></i>
+                    </div>
+                    <p class="text-gray-500 text-sm">No feedback has been submitted for this case yet.</p>
+                </div>
+            `;
+        }
+
+        // Compact layout: smaller margins/paddings for mobile, keep comfortable spacing on md+
+        let html = '<div class="mt-6"><h3 class="text-sm md:text-lg font-semibold text-gray-800 mb-3 flex items-center gap-2"><i class="fa fa-comments text-primary-600"></i> Case Feedback</h3><div class="space-y-3">';
+
+        feedbackList.forEach(fb => {
+            const date = new Date(fb.created_at);
+            const formattedDate = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+            const formattedTime = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+            
+            html += `
+                <div class="rounded-xl border bg-white/70 border-gray-200 p-3 md:p-4 shadow-sm">
+                    <div class="flex items-start gap-3">
+                        <div class="flex-shrink-0 w-9 h-9 rounded-full bg-primary-100 flex items-center justify-center">
+                            <i class="fa fa-user text-primary-600"></i>
+                        </div>
+                        <div class="flex-1 min-w-0 text-sm">
+                            <div class="flex items-center gap-2 mb-1">
+                                <p class="font-semibold text-gray-800">${escapeHtml(fb.author || 'Anonymous')}</p>
+                                <span class="text-[11px] text-gray-500">•</span>
+                                <span class="text-[11px] text-gray-500">${formattedDate} at ${formattedTime}</span>
+                            </div>
+                            <p class="text-gray-700 text-sm leading-snug">${escapeHtml(fb.feedback).replace(/\n/g, '<br>')}</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+        
+        html += '</div></div>';
+        return html;
+    }
+
+    function generateMeetingLogsContent() {
+        const meetingLogs = <?= json_encode($meetingLogs) ?>;
+        
+        if (meetingLogs.length === 0) {
+            return `
+                <div class="mt-8 p-6 text-center">
+                    <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-100 mb-4">
+                        <i class="fa fa-clipboard-list text-2xl text-gray-400"></i>
+                    </div>
+                    <p class="text-gray-500 text-sm">No meeting logs have been recorded for this case yet.</p>
+                </div>
+            `;
+        }
+
+        // Compact meeting logs layout: smaller paddings on mobile, keep spacing on md+
+        let html = '<div class="mt-6"><h3 class="text-sm md:text-lg font-semibold text-gray-800 mb-3 flex items-center gap-2"><i class="fa fa-clipboard-list text-primary-600"></i> Meeting Logs History</h3><div class="space-y-4">';
+
+        meetingLogs.forEach((log, index) => {
+            const hearingDate = new Date(log.Hearing_Date + ' ' + log.Hearing_Time);
+            const formattedDate = hearingDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+            const timeIn = log.Hearing_Time ? new Date('1970-01-01 ' + log.Hearing_Time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : 'N/A';
+            const timeOut = log.Hearing_End_Time ? new Date('1970-01-01 ' + log.Hearing_End_Time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : 'N/A';
+            
+            html += `
+                <div class="rounded-xl border bg-white/70 border-gray-200 p-3 md:p-5 shadow-sm">
+                    <div class="flex items-start gap-3 md:gap-4 mb-3">
+                        <div class="flex-shrink-0">
+                            <div class="w-10 h-10 md:w-12 md:h-12 rounded-full bg-primary-100 flex items-center justify-center ring-4 ring-primary-50">
+                                <span class="text-primary-700 font-bold text-sm">#${meetingLogs.length - index}</span>
+                            </div>
+                        </div>
+                        <div class="flex-1 min-w-0 text-sm">
+                            <h4 class="font-semibold text-gray-800 mb-1">${escapeHtml(log.hearingTitle || 'Hearing Session')}</h4>
+                            <div class="flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                                <span class="inline-flex items-center gap-1"><i class="fa fa-calendar"></i> ${formattedDate}</span>
+                                <span class="inline-flex items-center gap-1"><i class="fa fa-clock"></i> ${timeIn} - ${timeOut}</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="grid gap-2 md:gap-3 md:grid-cols-2 mb-2">
+                        <div class="px-2 py-2 rounded-lg bg-gray-50 border border-gray-200">
+                            <p class="text-[11px] text-gray-500 mb-0.5">Attendance</p>
+                            <p class="text-sm font-semibold text-gray-800">${escapeHtml(log.Attendance || 'Not recorded')}</p>
+                        </div>
+                        ${log.Reason_Incompliance ? `
+                        <div class="px-2 py-2 rounded-lg bg-amber-50 border border-amber-200">
+                            <p class="text-[11px] text-amber-600 mb-0.5">Reason for Incompliance</p>
+                            <p class="text-sm font-semibold text-amber-900">${escapeHtml(log.Reason_Incompliance)}</p>
+                        </div>
+                        ` : ''}
+                    </div>
+                    
+                    ${log.Hearing_Details ? `
+                    <div class="px-2 py-2 rounded-lg bg-blue-50 border border-blue-200">
+                        <p class="text-[11px] text-blue-600 mb-1 font-medium">Hearing Notes</p>
+                        <p class="text-sm text-blue-900 leading-snug whitespace-pre-line">${escapeHtml(log.Hearing_Details)}</p>
+                    </div>
+                    ` : ''}
+                </div>
+            `;
+        });
+        
+        html += '</div></div>';
+        return html;
+    }
+
+    function generateAttachmentsContent() {
+        const attachments = <?= json_encode($attachments) ?>;
+        
+        if (attachments.length === 0) {
+            return `
+                <div class="mt-8 p-6 text-center">
+                    <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-100 mb-4">
+                        <i class="fa fa-paperclip text-2xl text-gray-400"></i>
+                    </div>
+                    <p class="text-gray-500 text-sm">No attachments have been uploaded for this case.</p>
+                </div>
+            `;
+        }
+
+        let html = '<div class="mt-8"><h3 class="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2"><i class="fa fa-paperclip text-primary-600"></i> Case Attachments</h3><div class="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">';
+        
+        attachments.forEach(att => {
+            const basename = att.raw.split('/').pop();
+            const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(att.ext.toLowerCase());
+            const isPdf = att.ext.toLowerCase() === 'pdf';
+            
+            html += `
+                <div class="group relative rounded-xl border bg-white/70 border-gray-200 hover:border-primary-300 hover:shadow-md transition overflow-hidden">
+                    <div class="aspect-video w-full bg-gray-100 flex items-center justify-center overflow-hidden">
+            `;
+            
+            if (isImage) {
+                html += `<img src="../${escapeHtml(att.encoded)}" alt="Attachment" class="w-full h-full object-cover object-center group-hover:scale-105 transition" onerror="this.src='https://via.placeholder.com/300x180?text=Missing';" />`;
+            } else if (isPdf) {
+                html += `
+                    <div class="flex flex-col items-center justify-center text-primary-600 text-sm font-medium">
+                        <i class="fa fa-file-pdf text-3xl mb-1"></i>
+                        PDF File
+                    </div>
+                `;
+            } else {
+                html += `
+                    <div class="flex flex-col items-center justify-center text-primary-600 text-sm font-medium px-2 text-center">
+                        <i class="fa fa-paperclip text-3xl mb-1"></i>
+                        <span class="break-all leading-tight text-[11px]">${escapeHtml(basename)}</span>
+                    </div>
+                `;
+            }
+            
+            html += `
+                    </div>
+                    <div class="absolute inset-0 bg-black/0 group-hover:bg-black/45 transition flex items-center justify-center opacity-0 group-hover:opacity-100">
+                        <div class="flex gap-2">
+            `;
+            
+            if (isImage) {
+                html += `<button type="button" onclick="previewImage('../${escapeHtml(att.encoded)}')" class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white/90 hover:bg-white text-primary-700 text-xs font-medium shadow-sm"><i class="fa fa-eye"></i> View</button>`;
+            }
+            
+            html += `
+                            <a href="../${escapeHtml(att.encoded)}" download class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-xs font-medium shadow-sm"><i class="fa fa-download"></i> Download</a>
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+        
+        html += '</div></div>';
+        return html;
+    }
+
+    function escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+    </script>
+    <div id="imgPreviewModal" class="hidden fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-6">
+        <div class="relative max-w-4xl w-full">
+            <button onclick="closePreview()" class="absolute -top-4 -right-4 w-10 h-10 rounded-full bg-white text-gray-700 flex items-center justify-center shadow-lg hover:bg-primary-600 hover:text-white transition"><i class="fa fa-xmark text-lg"></i></button>
+            <div class="bg-white rounded-2xl overflow-hidden shadow-glow ring-1 ring-primary-200/40">
+                <img id="imgPreviewTag" src="" alt="Preview" class="w-full max-h-[80vh] object-contain bg-black" />
+            </div>
+        </div>
+    </div>
+</body>
+</html>

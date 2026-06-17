@@ -1,0 +1,3 @@
+
+         
+{"id":"gen-1754968082-E6xcTbbQNAnVfOF2FhAv","provider":"Novita","model":"meta-llama/llama-3-8b-instruct","object":"chat.completion","created":1754968082,"choices":[{"logprobs":null,"finish_reason":"stop","native_finish_reason":"stop","index":0,"message":{"role":"assistant","content":"YES","refusal":null,"reasoning":null}}],"usage":{"prompt_tokens":302,"completion_tokens":2,"total_tokens":304,"prompt_tokens_details":null,"completion_tokens_details":null}}

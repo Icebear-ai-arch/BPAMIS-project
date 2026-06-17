@@ -1,0 +1,129 @@
+/* 
+   BPAMIS Premium Animations
+   Provides elegant, slow, and subtle bouncing animations for login and register containers
+*/
+
+/* Bouncing animation for auth containers */
+@keyframes elegantBounce {
+    0% {
+        opacity: 0;
+        transform: translateY(30px) scale(0.95);
+        box-shadow: 0 0px 0px rgba(0, 0, 0, 0);
+    }
+    40% {
+        opacity: 1;
+        transform: translateY(-10px) scale(1.02);
+        box-shadow: 0 20px 30px rgba(0, 0, 0, 0.1);
+    }
+    60% {
+        transform: translateY(5px) scale(0.98);
+        box-shadow: 0 15px 25px rgba(0, 0, 0, 0.08);
+    }
+    80% {
+        transform: translateY(-2px) scale(1.01);
+        box-shadow: 0 18px 28px rgba(0, 0, 0, 0.09);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+        box-shadow: 0 15px 25px rgba(0, 0, 0, 0.1);
+    }
+}
+
+/* Fade in animation with slight scale */
+@keyframes fadeInScale {
+    0% {
+        opacity: 0;
+        transform: scale(0.98);
+    }
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+/* Container animation classes */
+.premium-container {
+    animation: elegantBounce 1.8s ease-out forwards;
+    position: relative;
+    z-index: 5;
+    width: 100%;
+}
+
+.premium-content {
+    animation: fadeInScale 1.2s ease-out forwards;
+    animation-delay: 0.4s;
+    opacity: 0;
+    height: 100%;
+    background: transparent;
+}
+
+/* Glass-like container styles */
+.premium-glass {
+    background: rgba(255, 255, 255, 0.92);
+    backdrop-filter: blur(12px);
+    box-shadow: 
+        0 10px 25px -5px rgba(0, 0, 0, 0.1),
+        0 8px 10px -6px rgba(0, 0, 0, 0.05),
+        0 0 0 1px rgba(255, 255, 255, 0.5) inset;
+    border-radius: 1.5rem;
+    overflow: hidden;
+    transition: all 0.3s ease;
+    border: 1px solid rgba(255, 255, 255, 0.7);
+}
+
+.premium-glass:hover {
+    box-shadow: 
+        0 20px 25px -5px rgba(0, 0, 0, 0.1),
+        0 10px 10px -5px rgba(0, 0, 0, 0.04),
+        0 0 0 1px rgba(255, 255, 255, 0.5) inset;
+    transform: translateY(-2px);
+}
+
+/* Content animation timing */
+.premium-staggered > *:nth-child(1) { animation-delay: 0.6s; }
+.premium-staggered > *:nth-child(2) { animation-delay: 0.8s; }
+.premium-staggered > *:nth-child(3) { animation-delay: 1.0s; }
+.premium-staggered > *:nth-child(4) { animation-delay: 1.2s; }
+.premium-staggered > *:nth-child(5) { animation-delay: 1.4s; }
+
+/* Staggered fade-in for form elements */
+.premium-fade-in {
+    opacity: 0;
+    animation: fadeInScale 0.8s ease-out forwards;
+}
+
+/* Professional form field styling */
+.premium-input {
+    transition: all 0.3s ease;
+    border: 1px solid rgba(226, 232, 240, 1);
+}
+
+.premium-input:focus {
+    border-color: #3B82F6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+    outline: none;
+}
+
+/* Premium button styles */
+.premium-button {
+    background: linear-gradient(to right, #2563eb, #4f46e5);
+    transition: all 0.3s ease;
+}
+
+.premium-button:hover {
+    background: linear-gradient(to right, #1d4ed8, #4338ca);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(79, 70, 229, 0.2);
+}
+
+/* Make animations accessibility-friendly */
+@media (prefers-reduced-motion: reduce) {
+    .premium-container,
+    .premium-content,
+    .premium-fade-in {
+        animation: none;
+        opacity: 1;
+        transform: none;
+    }
+}
