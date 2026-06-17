@@ -37,7 +37,7 @@ The Barangay Panducot Adjudication Management Information System is a capstone p
 - JavaScript  
 - PHP  
 - MySQL  
-- Bootstrap (if used)  
+- Tailwind
 - XAMPP / Web Hosting  
 
 ---
@@ -45,6 +45,7 @@ The Barangay Panducot Adjudication Management Information System is a capstone p
 ## 🎯 Project Purpose
 This system was developed to:
 - Digitize barangay complaint and case handling
+- Handles the Barangay Justice System
 - Improve record organization and retrieval
 - Speed up adjudication processes
 - Provide a centralized management system for officials
@@ -61,14 +62,7 @@ This system was developed to:
 
 ---
 
-## 🔮 Future Improvements
-- SMS or Email Notifications  
-- Mobile Application Version  
-- Digital Signature Integration  
-- Improved Analytics Dashboard  
-- Cloud Database Hosting  
 
----
 
 ## 📫 Contact
 - Email: carabuenajustfer@gmail.com  
